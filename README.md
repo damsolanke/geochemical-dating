@@ -1,14 +1,34 @@
-# Geochemical Dating — Runner-up (2nd of 31)
+<div align="center">
 
-[![CI](https://github.com/damsolanke/geochemical-dating/actions/workflows/ci.yml/badge.svg)](https://github.com/damsolanke/geochemical-dating/actions/workflows/ci.yml)
+<img src="docs/images/banner.png" alt="Geochemical Dating — Runner-up (2nd of 31) on Kaggle, private Macro-F1 0.96988" width="100%">
 
-Runner-up — **2nd of 31 teams** — on the Kaggle *Geochemical Dating* competition: predicting the geological age class of igneous rock samples from their major-oxide and trace-element geochemistry. Final private-leaderboard **Macro-F1 = 0.96988**, **0.00104 behind 1st place** (0.97092).
+<br><br>
 
-<p align="center"><img src="docs/images/architecture.png" width="840" alt="Ensemble pipeline architecture"></p>
+[![CI](https://img.shields.io/github/actions/workflow/status/damsolanke/geochemical-dating/ci.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=CI)](https://github.com/damsolanke/geochemical-dating/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/License-MIT-3DA639?style=for-the-badge)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org)
+[![Kaggle](https://img.shields.io/badge/Kaggle-2nd_of_31-20BEFF?style=for-the-badge&logo=kaggle&logoColor=white)](https://www.kaggle.com/competitions/geochemical-dating/leaderboard)
+
+Predicting the geological age class of igneous rock samples from their major-oxide and trace-element geochemistry —<br>a robust two-branch ensemble that generalised **upward** on the private split and finished **0.00104 behind 1st**.
+
+![XGBoost](https://img.shields.io/badge/XGBoost-1A7AC4?style=flat-square)
+![LightGBM](https://img.shields.io/badge/LightGBM-2E8B57?style=flat-square)
+![scikit-learn](https://img.shields.io/badge/scikit--learn-F7931E?style=flat-square&logo=scikitlearn&logoColor=white)
+![NumPy](https://img.shields.io/badge/NumPy-013243?style=flat-square&logo=numpy&logoColor=white)
+![pandas](https://img.shields.io/badge/pandas-150458?style=flat-square&logo=pandas&logoColor=white)
+
+</div>
+
+---
+
+<p align="center"><img src="docs/images/architecture.png" width="900" alt="Dual-branch ensemble pipeline"></p>
+
+---
 
 ## Result
 
-The final submission was chosen on cross-validation rather than public-leaderboard rank. That bias toward generalisation proved correct: it ranked 2nd on the public board and moved **upward** to 0.96988 on the private split, while the public leader fell to 3rd.
+> [!TIP]
+> The final submission was chosen on **cross-validation, not public-leaderboard rank**. That bias toward generalisation paid off: it sat 2nd on the public board and rose to **0.96988** on the private split, while the public leader overfit and fell to 3rd.
 
 | Competitor | Public LB | Private LB | Private rank |
 |---|---|---|---|
@@ -17,6 +37,8 @@ The final submission was chosen on cross-validation rather than public-leaderboa
 | Nikita Shevyrev | 0.96649 | 0.95728 | 3rd |
 
 The public-leaderboard leader (0.96649) dropped to 3rd on the private split (0.95728) — a textbook public→private shake-up — while this submission moved from 0.96292 to 0.96988. First place went to a low-public-profile entry (0.93876 public) whose pick generalised even better, finishing **0.00104** ahead. The takeaway cuts both ways: avoiding public-LB overfitting is necessary but not sufficient — the eventual winner was simply even less coupled to the public signal.
+
+---
 
 ## Problem
 
@@ -39,6 +61,8 @@ A 50/50 arithmetic blend of two components that capture orthogonal signal:
 Exact train/test duplicate rows are overridden with their known labels. Neither component is competitive alone — the Id-KNN encodes dataset structure, the ensemble encodes chemistry, and only their equal-weight blend reaches the top of the board. Tilting away from 50/50 reduced public Macro-F1, so the equal weight was kept as the most robust choice.
 
 Engineered features (`src/features.py`) are domain-informed: Mg#, alumina-saturation proxy, LREE/HREE enrichment, Nb and Ce anomalies, Ti/Nb, REE slope, log-transformed trace elements, silica bins, and interaction terms.
+
+---
 
 ## Quick Start
 
@@ -70,14 +94,17 @@ pytest -v                            # run the unit tests
 ```
 geochemical-dating/
 ├── src/
-│   ├── features.py          # domain geochemical feature engineering
-│   ├── idknn.py             # Id-based KNN — the 50% structural component
-│   └── pipeline.py          # end-to-end: features -> blend -> submission
+│   ├── features.py            # domain geochemical feature engineering
+│   ├── idknn.py               # Id-based KNN — the 50% structural component
+│   └── pipeline.py            # end-to-end: features -> blend -> submission
 ├── tests/
-│   └── test_features.py     # feature-engineering unit tests
+│   └── test_features.py       # feature-engineering unit tests
 ├── scripts/
-│   └── generate_diagrams.py # renders docs/images/architecture.png
-├── docs/images/architecture.png
+│   ├── generate_diagrams.py   # renders docs/images/architecture.png
+│   └── generate_banner.py     # renders docs/images/banner.png
+├── docs/images/
+│   ├── architecture.png
+│   └── banner.png
 ├── .github/workflows/ci.yml
 ├── requirements.txt
 ├── .env.example
@@ -92,6 +119,8 @@ pytest -v
 
 The suite validates the feature-engineering layer (column creation, no NaNs, value ranges, leakage-safe column selection). CI runs it on Python 3.10–3.12 on every push and pull request.
 
+---
+
 ## Data & Attribution
 
 The competition data is **not** redistributed here (per Kaggle's data-sharing terms); only the solution code is. The competition dataset is a subset derived from a published geochemistry source:
@@ -101,7 +130,9 @@ The competition data is **not** redistributed here (per Kaggle's data-sharing te
 
 ## Limitations
 
-- The Id-KNN component exploits a **structural artifact**: the sample `Id` tracks the source database's row order, so neighbours in `Id` space usually share an age class. That is specific to how this dataset was assembled and would not transfer to a properly shuffled or blinded split. The geochemistry-only ensemble is the generalisable part; the blend is what won the competition.
+> [!NOTE]
+> The Id-KNN component exploits a **structural artifact**: the sample `Id` tracks the source database's row order, so neighbours in `Id` space usually share an age class. That is specific to how this dataset was assembled and would not transfer to a properly shuffled or blinded split. The geochemistry-only ensemble is the generalisable part; the blend is what won the competition.
+
 - Small field (31 teams), and 1st place finished 0.00104 ahead — the margin at the top was roughly a single private-set sample.
 
 ## License
