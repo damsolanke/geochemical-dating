@@ -30,6 +30,8 @@ Predicting the geological age class of igneous rock samples from their major-oxi
 > [!TIP]
 > The final submission was chosen on **cross-validation, not public-leaderboard rank**. That bias toward generalisation paid off: it sat 2nd on the public board and rose to **0.96988** on the private split, while the public leader overfit and fell to 3rd.
 
+<p align="center"><img src="docs/images/shakeup.png" width="840" alt="Public to private leaderboard shake-up: this solution held 2nd while the public leader fell to 3rd"></p>
+
 | Competitor | Public LB | Private LB | Private rank |
 |---|---|---|---|
 | Raphael Stottele | 0.93876 | **0.97092** | **1st** |
