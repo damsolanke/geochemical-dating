@@ -1,0 +1,35 @@
+__pycache__/
+.env
+.env.*
+!.env.example
+*.pyc
+checkpoints/
+*.pt
+*.bin
+*.onnx
+logs/
+.cursor/
+.vscode/
+kaggle_datasets/**/*.bin
+kaggle_datasets/**/*.xml
+data/
+*.zip
+submissions/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+*.log
+nohup.out
+
+# Generated model artifacts / caches
+probs/
+*.pkl
+catboost_info/
+.DS_Store
+
+# Internal working notes and competition-specific automation (not for the public repo)
+CLAUDE.md
+SUBMISSION_PLAN.md
+notebooks/
+scripts/free_option_submit.py
