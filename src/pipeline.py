@@ -15,8 +15,15 @@ The prediction is a 50/50 arithmetic blend of two components:
 
 Exact train/test duplicate rows are then overridden with their known labels.
 
+Note on ``Id``: the competition submission also fed the raw ``Id`` column to
+the model ensemble as a feature, so that branch was not purely geochemical.
+By default this script keeps ``Id`` out of the ensemble (the Id-KNN branch is
+the only place the ordering signal is used); pass ``--id-in-ensemble`` to
+reproduce the competition run exactly.
+
 Usage:
-    python src/pipeline.py --tag final
+    python src/pipeline.py --tag leakfree                   # ensemble on chemistry only
+    python src/pipeline.py --tag final --id-in-ensemble     # the competition run
 
 Requires the competition CSVs in ``data/`` (not distributed with this repo --
 see the README for how to obtain them from Kaggle). ``--data-dir`` and
@@ -89,6 +96,18 @@ def load_data(data_dir=DEFAULT_DATA_DIR):
     train = add_geochemical_features(train.rename(columns={"Id": "id"}))
     test = add_geochemical_features(test.rename(columns={"Id": "id"}))
     return train, test, get_feature_cols(train), raw_cols
+
+
+def ensemble_features(feature_cols, cluster_cols, id_in_ensemble=False):
+    """Feature list for the model ensemble.
+
+    ``id_in_ensemble=True`` appends the raw ``id`` column, as the competition
+    run did; the default keeps the ensemble free of the ``Id`` ordering leak.
+    """
+    features = list(feature_cols) + list(cluster_cols)
+    if id_in_ensemble:
+        features.append("id")
+    return features
 
 
 def add_cluster_onehot(train, test, feature_cols):
@@ -223,6 +242,10 @@ def main(argv=None):
     )
     ap.add_argument("--tag", default="final", help="submission filename suffix")
     ap.add_argument(
+        "--id-in-ensemble", action="store_true",
+        help="also feed the raw Id column to the model ensemble (reproduces the competition run)",
+    )
+    ap.add_argument(
         "--data-dir", type=Path, default=DEFAULT_DATA_DIR,
         help="directory holding train.csv / test.csv (default: <repo>/data)",
     )
@@ -237,8 +260,12 @@ def main(argv=None):
     print("Loading data and engineering features...", flush=True)
     train_df, test_df, feature_cols, raw_cols = load_data(args.data_dir)
     train_df, test_df, cluster_cols = add_cluster_onehot(train_df, test_df, feature_cols)
-    all_features = feature_cols + cluster_cols + ["id"]
-    print(f"  train={len(train_df)} test={len(test_df)} features={len(all_features)}", flush=True)
+    all_features = ensemble_features(feature_cols, cluster_cols, args.id_in_ensemble)
+    print(
+        f"  train={len(train_df)} test={len(test_df)} features={len(all_features)}"
+        f" (Id in ensemble: {args.id_in_ensemble})",
+        flush=True,
+    )
 
     ids_train = train_df["id"].values
     ids_test = test_df["id"].values
