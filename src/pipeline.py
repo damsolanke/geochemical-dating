@@ -19,7 +19,10 @@ Usage:
     python src/pipeline.py --tag final
 
 Requires the competition CSVs in ``data/`` (not distributed with this repo --
-see the README for how to obtain them from Kaggle).
+see the README for how to obtain them from Kaggle). ``--data-dir`` and
+``--out-dir`` relocate the inputs and outputs (``<out-dir>/submissions/`` and
+``<out-dir>/logs/``); ``--n-rounds`` caps the boosting rounds so the whole
+pipeline can be smoke-tested on a small synthetic dataset.
 """
 
 import argparse
@@ -43,9 +46,8 @@ from features import add_geochemical_features, get_feature_cols  # noqa: E402
 from idknn import id_knn_proba  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-DATA = ROOT / "data"
-SUBMISSIONS = ROOT / "submissions"
-LOGS = ROOT / "logs"
+DEFAULT_DATA_DIR = ROOT / "data"
+DEFAULT_OUT_DIR = ROOT
 
 N_CLASSES = 3
 
@@ -74,12 +76,19 @@ XGB_PARAMS = {
 # Data + features
 # ---------------------------------------------------------------------------
 
-def load_data():
-    train = pd.read_csv(DATA / "train.csv").rename(columns={"Id": "id"})
-    test = pd.read_csv(DATA / "test.csv").rename(columns={"Id": "id"})
-    train = add_geochemical_features(train)
-    test = add_geochemical_features(test)
-    return train, test, get_feature_cols(train)
+def load_data(data_dir=DEFAULT_DATA_DIR):
+    """Load train/test CSVs from ``data_dir`` and add engineered features.
+
+    Returns ``(train, test, feature_cols, raw_cols)`` where ``raw_cols`` are the
+    original feature columns of ``train.csv`` (everything but ``Id``/``Label``).
+    """
+    data_dir = Path(data_dir)
+    train = pd.read_csv(data_dir / "train.csv")
+    test = pd.read_csv(data_dir / "test.csv")
+    raw_cols = [c for c in train.columns if c not in ("Label", "Id")]
+    train = add_geochemical_features(train.rename(columns={"Id": "id"}))
+    test = add_geochemical_features(test.rename(columns={"Id": "id"}))
+    return train, test, get_feature_cols(train), raw_cols
 
 
 def add_cluster_onehot(train, test, feature_cols):
@@ -119,9 +128,8 @@ def compute_cluster_weights(train, test, feature_cols, n_clusters=80):
     return np.array([test_counts.get(c, 0) + 0.1 for c in train_clusters])
 
 
-def find_duplicate_labels(train, test):
+def find_duplicate_labels(train, test, raw_cols):
     """Test rows that exactly match a train row on raw features -> free labels."""
-    raw_cols = [c for c in pd.read_csv(DATA / "train.csv").columns if c not in ("Label", "Id")]
     avail_cols = [c for c in raw_cols if c in train.columns and c in test.columns]
     merged = test.merge(train[avail_cols + ["Label"]], on=avail_cols, how="inner")
     return dict(zip(merged["id"], merged["Label"]))
@@ -131,8 +139,14 @@ def find_duplicate_labels(train, test):
 # Model ensemble (XGBoost + LightGBM + SVM), cluster-weighted, multi-seed CV
 # ---------------------------------------------------------------------------
 
-def run_full_cv(train_df, test_df, all_features, n_folds=15, seeds=(42, 2024, 7, 99, 123)):
-    """Return seed-averaged OOF and test probabilities for each base model."""
+def run_full_cv(
+    train_df, test_df, all_features, n_folds=15, seeds=(42, 2024, 7, 99, 123), n_rounds=2000
+):
+    """Return seed-averaged OOF and test probabilities for each base model.
+
+    ``n_rounds`` is the boosting-round cap for XGBoost and LightGBM (both also
+    early-stop on the validation fold after 200 rounds without improvement).
+    """
     X = train_df[all_features].values
     y = train_df["Label"].values
     X_test = test_df[all_features].values
@@ -159,7 +173,7 @@ def run_full_cv(train_df, test_df, all_features, n_folds=15, seeds=(42, 2024, 7,
             dtrain = xgb.DMatrix(X_tr, label=y_tr, weight=w_tr)
             dval = xgb.DMatrix(X_vl, label=y_vl)
             m = xgb.train(
-                {**XGB_PARAMS, "random_state": seed}, dtrain, num_boost_round=2000,
+                {**XGB_PARAMS, "random_state": seed}, dtrain, num_boost_round=n_rounds,
                 evals=[(dval, "val")], early_stopping_rounds=200, verbose_eval=False,
             )
             oof["xgb"][vl_idx] += m.predict(dval) / n_seeds
@@ -169,7 +183,7 @@ def run_full_cv(train_df, test_df, all_features, n_folds=15, seeds=(42, 2024, 7,
             dt = lgb.Dataset(X_tr, label=y_tr, weight=w_tr, feature_name=list(all_features))
             dv = lgb.Dataset(X_vl, label=y_vl, feature_name=list(all_features), reference=dt)
             m_l = lgb.train(
-                {**LGBM_PARAMS, "random_state": seed}, dt, num_boost_round=2000,
+                {**LGBM_PARAMS, "random_state": seed}, dt, num_boost_round=n_rounds,
                 valid_sets=[dv],
                 callbacks=[lgb.early_stopping(200, verbose=False), lgb.log_evaluation(0)],
             )
@@ -196,16 +210,32 @@ def blend(parts, weights):
 # Main
 # ---------------------------------------------------------------------------
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
+def main(argv=None):
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--n-folds", type=int, default=15, help="CV folds for the model ensemble")
     ap.add_argument("--seeds", type=int, nargs="+", default=[42, 2024, 7, 99, 123])
     ap.add_argument("--knn-folds", type=int, default=10, help="CV folds for Id-KNN OOF")
+    ap.add_argument(
+        "--n-rounds", type=int, default=2000,
+        help="max boosting rounds for XGBoost/LightGBM (early stopping still applies)",
+    )
     ap.add_argument("--tag", default="final", help="submission filename suffix")
-    args = ap.parse_args()
+    ap.add_argument(
+        "--data-dir", type=Path, default=DEFAULT_DATA_DIR,
+        help="directory holding train.csv / test.csv (default: <repo>/data)",
+    )
+    ap.add_argument(
+        "--out-dir", type=Path, default=DEFAULT_OUT_DIR,
+        help="where submissions/ and logs/ are written (default: repo root)",
+    )
+    args = ap.parse_args(argv)
+    submissions_dir = args.out_dir / "submissions"
+    logs_dir = args.out_dir / "logs"
 
     print("Loading data and engineering features...", flush=True)
-    train_df, test_df, feature_cols = load_data()
+    train_df, test_df, feature_cols, raw_cols = load_data(args.data_dir)
     train_df, test_df, cluster_cols = add_cluster_onehot(train_df, test_df, feature_cols)
     all_features = feature_cols + cluster_cols + ["id"]
     print(f"  train={len(train_df)} test={len(test_df)} features={len(all_features)}", flush=True)
@@ -214,7 +244,7 @@ def main():
     ids_test = test_df["id"].values
     y = train_df["Label"].values
 
-    dup_map = find_duplicate_labels(train_df, test_df)
+    dup_map = find_duplicate_labels(train_df, test_df, raw_cols)
     print(f"  exact train/test duplicates: {len(dup_map)}", flush=True)
 
     # --- Component 1: Id-KNN (OOF via CV, test on full train) ---
@@ -228,7 +258,10 @@ def main():
 
     # --- Component 2: model ensemble (XGB + LGBM + SVM) ---
     print("Model ensemble (XGBoost + LightGBM + SVM)...", flush=True)
-    oof, test_p = run_full_cv(train_df, test_df, all_features, n_folds=args.n_folds, seeds=args.seeds)
+    oof, test_p = run_full_cv(
+        train_df, test_df, all_features,
+        n_folds=args.n_folds, seeds=args.seeds, n_rounds=args.n_rounds,
+    )
     model_oof = blend(oof, MODEL_WEIGHTS)
     model_test = blend(test_p, MODEL_WEIGHTS)
     print(f"  model OOF Macro-F1: {f1_score(y, model_oof.argmax(1), average='macro'):.4f}", flush=True)
@@ -250,23 +283,28 @@ def main():
             overrides += 1
     print(f"  applied {overrides} duplicate overrides", flush=True)
 
-    SUBMISSIONS.mkdir(exist_ok=True)
-    sub_path = SUBMISSIONS / f"submission_{args.tag}.csv"
+    submissions_dir.mkdir(parents=True, exist_ok=True)
+    sub_path = submissions_dir / f"submission_{args.tag}.csv"
     pd.DataFrame({"id": ids_test, "Label": labels}).to_csv(sub_path, index=False)
     print(f"Submission saved: {sub_path}", flush=True)
 
-    LOGS.mkdir(exist_ok=True)
+    logs_dir.mkdir(parents=True, exist_ok=True)
     metrics = {
         "tag": args.tag,
         "n_folds": args.n_folds,
         "seeds": list(args.seeds),
+        "knn_folds": args.knn_folds,
+        "n_rounds": args.n_rounds,
         "model_weights": MODEL_WEIGHTS,
         "knn_weight": KNN_WEIGHT,
         "blended_oof_macro_f1": float(oof_f1),
         "n_duplicate_overrides": overrides,
     }
-    with open(LOGS / f"metrics_{args.tag}.json", "w") as f:
+    metrics_path = logs_dir / f"metrics_{args.tag}.json"
+    with open(metrics_path, "w") as f:
         json.dump(metrics, f, indent=2)
+    print(f"Metrics saved: {metrics_path}", flush=True)
+    return metrics
 
 
 if __name__ == "__main__":
