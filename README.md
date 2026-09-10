@@ -6,7 +6,7 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/damsolanke/geochemical-dating/ci.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=CI)](https://github.com/damsolanke/geochemical-dating/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-MIT-3DA639?style=for-the-badge)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org)
+[![Python](https://img.shields.io/badge/Python-3.10--3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org)
 [![Kaggle](https://img.shields.io/badge/Kaggle-2nd_of_31-20BEFF?style=for-the-badge&logo=kaggle&logoColor=white)](https://www.kaggle.com/competitions/geochemical-dating/leaderboard)
 
 Predicting the geological age class of igneous rock samples from their major-oxide and trace-element geochemistry —<br>a robust two-branch ensemble that generalised **upward** on the private split and finished **0.00104 behind 1st**.
@@ -88,9 +88,17 @@ pip install -r requirements.txt
 #   data/train.csv   data/test.csv
 # The data is not redistributed with this repo — see "Data & attribution".
 
-python src/pipeline.py --tag final   # -> submissions/submission_final.csv
-pytest -v                            # run the unit tests
+# Leak-free default: the model ensemble sees geochemistry only.
+python src/pipeline.py --tag leakfree                 # -> submissions/submission_leakfree.csv + logs/metrics_leakfree.json
+
+# Exact competition run: the ensemble also gets the raw Id column.
+python src/pipeline.py --tag final --id-in-ensemble   # -> submissions/submission_final.csv + logs/metrics_final.json
+
+ruff check src tests scripts   # lint
+pytest -v                      # 12 tests; needs no Kaggle data (the smoke test builds a synthetic set)
 ```
+
+`--n-folds`, `--seeds`, `--knn-folds` and `--n-rounds` shrink the run for a quick check; `--data-dir` / `--out-dir` relocate the inputs and outputs.
 
 ## Design Decisions
 
@@ -107,30 +115,42 @@ pytest -v                            # run the unit tests
 ```
 geochemical-dating/
 ├── src/
-│   ├── features.py            # domain geochemical feature engineering
-│   ├── idknn.py               # Id-based KNN — the 50% structural component
-│   └── pipeline.py            # end-to-end: features -> blend -> submission
+│   ├── __init__.py
+│   ├── features.py               # domain geochemical feature engineering
+│   ├── idknn.py                  # Id-based KNN — the 50% structural component
+│   └── pipeline.py               # end-to-end: features -> blend -> submission + metrics JSON
 ├── tests/
-│   └── test_features.py       # feature-engineering unit tests
+│   ├── __init__.py
+│   ├── test_features.py          # feature-engineering unit tests
+│   ├── test_idknn.py             # Id-KNN unit tests
+│   └── test_pipeline_smoke.py    # end-to-end run on a synthetic dataset
 ├── scripts/
-│   ├── generate_diagrams.py   # renders docs/images/architecture.png
-│   └── generate_banner.py     # renders docs/images/banner.png
+│   ├── generate_diagrams.py      # renders docs/images/architecture.png
+│   ├── generate_banner.py        # renders docs/images/banner.png
+│   └── generate_results.py       # renders docs/images/shakeup.png
 ├── docs/images/
 │   ├── architecture.png
-│   └── banner.png
-├── .github/workflows/ci.yml
-├── requirements.txt
-├── .env.example
+│   ├── banner.png
+│   └── shakeup.png
+├── .github/workflows/ci.yml      # ruff + pytest on Python 3.10-3.12, gitleaks
+├── requirements.txt              # pinned; installed from scratch on 3.10, 3.11 and 3.12
 └── LICENSE
 ```
 
 ## Testing
 
 ```bash
-pytest -v
+ruff check src tests scripts   # lint — the same command CI runs
+pytest -v                      # 12 tests, well under a minute on CPU, no Kaggle data or network needed
 ```
 
-The suite validates the feature-engineering layer (column creation, no NaNs, value ranges, leakage-safe column selection). CI runs it on Python 3.10–3.12 on every push and pull request.
+| File | What it checks |
+|---|---|
+| `tests/test_features.py` | Feature-engineering layer: column creation, no NaNs, value ranges, leakage-safe column selection. |
+| `tests/test_idknn.py` | Id-KNN: normalised probabilities, the nearest `Id` run wins, exact-match weighting, effect of `k` / `sigma`. |
+| `tests/test_pipeline_smoke.py` | The whole pipeline on a synthetic ~600/200-row dataset with the competition's column names (`--n-folds 2 --seeds 1 --knn-folds 2 --n-rounds 30`): `Id,Label` submission columns, metrics keys, duplicate-override count, and that `Id` reaches the ensemble only with `--id-in-ensemble`. |
+
+CI (`.github/workflows/ci.yml`) runs the lint and the suite on Python 3.10, 3.11 and 3.12 on every push and pull request, plus a gitleaks secret scan of the full history.
 
 ---
 
