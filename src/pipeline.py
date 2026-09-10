@@ -281,7 +281,8 @@ def main(argv=None):
     for tr_idx, vl_idx in skf.split(ids_train, y):
         id_knn_oof[vl_idx] = id_knn_proba(ids_train[tr_idx], y[tr_idx], ids_train[vl_idx])
     id_knn_test = id_knn_proba(ids_train, y, ids_test)
-    print(f"  Id-KNN OOF Macro-F1: {f1_score(y, id_knn_oof.argmax(1), average='macro'):.4f}", flush=True)
+    idknn_f1 = f1_score(y, id_knn_oof.argmax(1), average="macro")
+    print(f"  Id-KNN OOF Macro-F1: {idknn_f1:.4f}", flush=True)
 
     # --- Component 2: model ensemble (XGB + LGBM + SVM) ---
     print("Model ensemble (XGBoost + LightGBM + SVM)...", flush=True)
@@ -291,13 +292,14 @@ def main(argv=None):
     )
     model_oof = blend(oof, MODEL_WEIGHTS)
     model_test = blend(test_p, MODEL_WEIGHTS)
-    print(f"  model OOF Macro-F1: {f1_score(y, model_oof.argmax(1), average='macro'):.4f}", flush=True)
+    ensemble_f1 = f1_score(y, model_oof.argmax(1), average="macro")
+    print(f"  model OOF Macro-F1: {ensemble_f1:.4f}", flush=True)
 
     # --- Final 50/50 blend ---
     blend_oof = (1 - KNN_WEIGHT) * model_oof + KNN_WEIGHT * id_knn_oof
     blend_test = (1 - KNN_WEIGHT) * model_test + KNN_WEIGHT * id_knn_test
-    oof_f1 = f1_score(y, blend_oof.argmax(1), average="macro")
-    print(f"  blended OOF Macro-F1: {oof_f1:.4f}", flush=True)
+    blended_f1 = f1_score(y, blend_oof.argmax(1), average="macro")
+    print(f"  blended OOF Macro-F1: {blended_f1:.4f}", flush=True)
 
     labels = blend_test.argmax(1).copy()
 
@@ -324,7 +326,11 @@ def main(argv=None):
         "n_rounds": args.n_rounds,
         "model_weights": MODEL_WEIGHTS,
         "knn_weight": KNN_WEIGHT,
-        "blended_oof_macro_f1": float(oof_f1),
+        "id_in_ensemble": bool(args.id_in_ensemble),
+        "n_features": len(all_features),
+        "idknn_oof_macro_f1": float(idknn_f1),
+        "ensemble_oof_macro_f1": float(ensemble_f1),
+        "blended_oof_macro_f1": float(blended_f1),
         "n_duplicate_overrides": overrides,
     }
     metrics_path = logs_dir / f"metrics_{args.tag}.json"
