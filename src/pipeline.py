@@ -147,6 +147,20 @@ def compute_cluster_weights(train, test, feature_cols, n_clusters=80):
     return np.array([test_counts.get(c, 0) + 0.1 for c in train_clusters])
 
 
+def submission_columns(data_dir):
+    """``(id_col, label_col)`` for the submission file.
+
+    Taken from the header of ``sample_submission.csv`` when it is present in
+    ``data_dir``; otherwise the competition's ``("Id", "Label")``.
+    """
+    sample = Path(data_dir) / "sample_submission.csv"
+    if sample.exists():
+        cols = list(pd.read_csv(sample, nrows=0).columns)
+        if len(cols) >= 2:
+            return cols[0], cols[1]
+    return "Id", "Label"
+
+
 def find_duplicate_labels(train, test, raw_cols):
     """Test rows that exactly match a train row on raw features -> free labels."""
     avail_cols = [c for c in raw_cols if c in train.columns and c in test.columns]
@@ -314,7 +328,8 @@ def main(argv=None):
 
     submissions_dir.mkdir(parents=True, exist_ok=True)
     sub_path = submissions_dir / f"submission_{args.tag}.csv"
-    pd.DataFrame({"id": ids_test, "Label": labels}).to_csv(sub_path, index=False)
+    id_col, label_col = submission_columns(args.data_dir)
+    pd.DataFrame({id_col: ids_test, label_col: labels}).to_csv(sub_path, index=False)
     print(f"Submission saved: {sub_path}", flush=True)
 
     logs_dir.mkdir(parents=True, exist_ok=True)
