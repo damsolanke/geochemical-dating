@@ -40,6 +40,17 @@ Predicting the geological age class of igneous rock samples from their major-oxi
 
 The public-leaderboard leader (0.96649) dropped to 3rd on the private split (0.95728) — a textbook public→private shake-up — while this submission moved from 0.96292 to 0.96988. First place went to a low-public-profile entry (0.93876 public) whose pick generalised even better, finishing **0.00104** ahead. The takeaway cuts both ways: avoiding public-LB overfitting is necessary but not sufficient — the eventual winner was simply even less coupled to the public signal.
 
+### Leak audit
+
+The competition submission fed the raw `Id` column not only to the Id-KNN branch but also to the model ensemble as a plain feature, so the "geochemistry" branch also saw the dataset-ordering artifact. `src/pipeline.py` now keeps `Id` out of the ensemble by default and only re-adds it with `--id-in-ensemble`; every run writes `logs/metrics_<tag>.json` with the per-component OOF Macro-F1 (`ensemble_oof_macro_f1`, `blended_oof_macro_f1`, `idknn_oof_macro_f1`), the feature count and the `id_in_ensemble` flag, so the two variants can be compared from their metrics files alone.
+
+| Run | Command | Ensemble OOF | Blended OOF | Private LB |
+|---|---|---|---|---|
+| Competition run (ensemble also saw `Id`) | `python src/pipeline.py --tag final --id-in-ensemble` | pending | pending | **0.96988** |
+| Leak-free default | `python src/pipeline.py --tag leakfree` | pending | pending | not submitted |
+
+The private-LB score is the only verified number in this table. The OOF cells are pending a re-run on the Kaggle data; they will be filled from `logs/metrics_final.json` and `logs/metrics_leakfree.json`, which `.gitignore` deliberately keeps trackable (`!logs/metrics_*.json`).
+
 ---
 
 ## Problem
@@ -58,7 +69,7 @@ A 50/50 arithmetic blend of two components that capture orthogonal signal:
 | Component | Weight | What it captures | Generalises? |
 |---|---|---|---|
 | **Id-KNN** — dataset-structure exploit (`src/idknn.py`) | 50% | The sample `Id` tracks the source database's row order (Spearman ≈ 0.999), so contiguous `Id` runs share an age class. Predicts each sample from the labels of its nearest neighbours in `Id` space (k=3, σ=2, exponential weighting; OOF via 10-fold). | **No** — specific to how this dataset was assembled; it would not survive a shuffled or blinded split. |
-| **Model ensemble** — geochemistry (`src/pipeline.py`) | 50% | A weighted blend `0.52·XGBoost + 0.09·LightGBM + 0.39·SVM(RBF)` over engineered features plus KMeans cluster one-hots, with cluster-frequency sample weighting, 15-fold CV averaged over 5 seeds. | **Yes** — a standard geochemical classifier. |
+| **Model ensemble** — geochemistry (`src/pipeline.py`) | 50% | A weighted blend `0.52·XGBoost + 0.09·LightGBM + 0.39·SVM(RBF)` over engineered features plus KMeans cluster one-hots, with cluster-frequency sample weighting, 15-fold CV averaged over 5 seeds. In the competition run the feature list also included the raw `Id` (`--id-in-ensemble`); the default now excludes it — see [Leak audit](#leak-audit). | **Yes** with the leak-free default — a standard geochemical classifier. The competition-run variant also leaned on `Id`. |
 
 Exact train/test duplicate rows are overridden with their known labels. Neither component is competitive alone — the Id-KNN encodes dataset structure, the ensemble encodes chemistry, and only their equal-weight blend reaches the top of the board. Tilting away from 50/50 reduced public Macro-F1, so the equal weight was kept as the most robust choice.
 
@@ -133,7 +144,7 @@ The competition data is **not** redistributed here (per Kaggle's data-sharing te
 ## Limitations
 
 > [!NOTE]
-> The Id-KNN component exploits a **structural artifact**: the sample `Id` tracks the source database's row order, so neighbours in `Id` space usually share an age class. That is specific to how this dataset was assembled and would not transfer to a properly shuffled or blinded split. The geochemistry-only ensemble is the generalisable part; the blend is what won the competition.
+> The Id-KNN component exploits a **structural artifact**: the sample `Id` tracks the source database's row order, so neighbours in `Id` space usually share an age class. That is specific to how this dataset was assembled and would not transfer to a properly shuffled or blinded split. In the competition run the model ensemble *also* received the raw `Id` as a feature, so it was not purely geochemical either; the pipeline now drops `Id` from the ensemble by default and `--id-in-ensemble` reproduces the competition run (see [Leak audit](#leak-audit)). The leak-free ensemble is the generalisable part; the blend is what won the competition.
 
 - Small field (31 teams), and 1st place finished 0.00104 ahead — the margin at the top was roughly a single private-set sample.
 
