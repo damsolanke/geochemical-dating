@@ -76,8 +76,11 @@ def make_synthetic(out_dir, n_train=N_TRAIN, n_test=N_TEST, n_dups=N_DUPS, seed=
     train["Label"] = labels[tr_idx]
     test = df.iloc[te_idx].copy()
     # Exact copies of train rows (under test Ids) exercise the duplicate override.
-    test.iloc[:n_dups, 1:] = train.iloc[:n_dups][RAW_COLS].values
-    dup_labels = dict(zip(test["Id"].iloc[:n_dups], train["Label"].iloc[:n_dups]))
+    # Copy rows whose label is not 0: the test Ids they land on sit in the label-0
+    # run, so a label-0 source would pass even with the override removed.
+    src = train[train["Label"] != 0].iloc[:n_dups]
+    test.iloc[:n_dups, 1:] = src[RAW_COLS].values
+    dup_labels = dict(zip(test["Id"].iloc[:n_dups], src["Label"]))
 
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
