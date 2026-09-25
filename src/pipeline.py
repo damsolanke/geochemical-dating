@@ -18,8 +18,9 @@ Exact train/test duplicate rows are then overridden with their known labels.
 Note on ``Id``: the competition submission also fed the raw ``Id`` column to
 the model ensemble as a feature, so that branch was not purely geochemical.
 By default this script keeps ``Id`` out of the ensemble (the Id-KNN branch is
-the only place the ordering signal is used); pass ``--id-in-ensemble`` to
-reproduce the competition run exactly.
+the only place the ordering signal is used); pass ``--id-in-ensemble`` for the
+competition configuration. This script was written after the competition and
+has not been re-run to reproduce the 0.96988 submission.
 
 Usage:
     python src/pipeline.py --tag leakfree                   # ensemble on chemistry only

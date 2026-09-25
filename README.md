@@ -46,10 +46,10 @@ The competition submission fed the raw `Id` column not only to the Id-KNN branch
 
 | Run | Command | Ensemble OOF | Blended OOF | Private LB |
 |---|---|---|---|---|
-| Competition run (ensemble also saw `Id`) | `python src/pipeline.py --tag final --id-in-ensemble` | pending | pending | **0.96988** |
+| Competition configuration (ensemble also saw `Id`) | `python src/pipeline.py --tag final --id-in-ensemble` | pending | pending | **0.96988** |
 | Leak-free default | `python src/pipeline.py --tag leakfree` | pending | pending | not submitted |
 
-The private-LB score is the only verified number in this table. The OOF cells are pending a re-run on the Kaggle data; they will be filled from `logs/metrics_final.json` and `logs/metrics_leakfree.json`, which `.gitignore` deliberately keeps trackable (`!logs/metrics_*.json`).
+The private-LB score is the only verified number in this table, and it comes from the original competition submission: `src/pipeline.py` was written afterwards and has not been re-run to reproduce it. The OOF cells are pending a re-run on the Kaggle data; they will be filled from `logs/metrics_final.json` and `logs/metrics_leakfree.json`, which `.gitignore` deliberately keeps trackable (`!logs/metrics_final.json`, `!logs/metrics_leakfree.json`).
 
 ---
 
@@ -64,14 +64,14 @@ The private-LB score is the only verified number in this table. The OOF cells ar
 
 ## Approach
 
-A 50/50 arithmetic blend of two components that capture orthogonal signal:
+A 50/50 arithmetic blend of two components that capture different signals:
 
 | Component | Weight | What it captures | Generalises? |
 |---|---|---|---|
 | **Id-KNN** — dataset-structure exploit (`src/idknn.py`) | 50% | The sample `Id` tracks the source database's row order (Spearman ≈ 0.999), so contiguous `Id` runs share an age class. Predicts each sample from the labels of its nearest neighbours in `Id` space (k=3, σ=2, exponential weighting; OOF via 10-fold). | **No** — specific to how this dataset was assembled; it would not survive a shuffled or blinded split. |
 | **Model ensemble** — geochemistry (`src/pipeline.py`) | 50% | A weighted blend `0.52·XGBoost + 0.09·LightGBM + 0.39·SVM(RBF)` over engineered features plus KMeans cluster one-hots, with cluster-frequency sample weighting, 15-fold CV averaged over 5 seeds. In the competition run the feature list also included the raw `Id` (`--id-in-ensemble`); the default now excludes it — see [Leak audit](#leak-audit). | **Yes** with the leak-free default — a standard geochemical classifier. The competition-run variant also leaned on `Id`. |
 
-Exact train/test duplicate rows are overridden with their known labels. Neither component is competitive alone — the Id-KNN encodes dataset structure, the ensemble encodes chemistry, and only their equal-weight blend reaches the top of the board. Tilting away from 50/50 reduced public Macro-F1, so the equal weight was kept as the most robust choice.
+Exact train/test duplicate rows are overridden with their known labels. Neither component is competitive alone — the Id-KNN encodes dataset ordering and the ensemble mostly chemistry (in the competition run it also saw `Id`, see the leak audit), and only their equal-weight blend reaches the top of the board. Tilting away from 50/50 reduced public Macro-F1, so the equal weight was kept as the most robust choice.
 
 Engineered features (`src/features.py`) are domain-informed: Mg#, alumina-saturation proxy, LREE/HREE enrichment, Nb and Ce anomalies, Ti/Nb, REE slope, log-transformed trace elements, silica bins, and interaction terms.
 
@@ -104,7 +104,7 @@ pytest -v                      # 12 tests; needs no Kaggle data (the smoke test 
 
 | Decision | Why | Tradeoff |
 |---|---|---|
-| 50/50 Id-KNN + model blend | The two signals (ordering vs chemistry) are orthogonal; an equal weight was the most robust out-of-sample | Tilting toward either component lowered public Macro-F1 |
+| 50/50 Id-KNN + model blend | The two signals (ordering vs chemistry) are complementary; an equal weight was the most robust out-of-sample | Tilting toward either component lowered public Macro-F1 |
 | Select the least-overfit submission | Minimise public→private shake-up risk ("trust your CV") | Gave up a marginally higher public score for robustness — which beat the public leader on private |
 | Cluster-frequency sample weighting | Focus the models on regions of feature space the test set actually occupies | Adds KMeans hyperparameters |
 | SVM alongside the tree models | Decorrelated errors vs XGBoost/LightGBM | Slower than GBMs alone |
@@ -150,7 +150,7 @@ pytest -v                      # 12 tests, well under a minute on CPU, no Kaggle
 | `tests/test_idknn.py` | Id-KNN: normalised probabilities, the nearest `Id` run wins, exact-match weighting, effect of `k` / `sigma`. |
 | `tests/test_pipeline_smoke.py` | The whole pipeline on a synthetic ~600/200-row dataset with the competition's column names (`--n-folds 2 --seeds 1 --knn-folds 2 --n-rounds 30`): `Id,Label` submission columns, metrics keys, duplicate-override count, and that `Id` reaches the ensemble only with `--id-in-ensemble`. |
 
-CI (`.github/workflows/ci.yml`) runs the lint and the suite on Python 3.10, 3.11 and 3.12 on every push and pull request, plus a gitleaks secret scan of the full history.
+CI (`.github/workflows/ci.yml`) runs the lint and the suite on Python 3.10, 3.11 and 3.12 on every push and pull request, plus a gitleaks secret scan of the pushed commits.
 
 ---
 
